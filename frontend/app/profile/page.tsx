@@ -89,20 +89,18 @@ export default function ProfilePage() {
       if (formData.bio) updateData.bio = formData.bio;
       if (imageUrl) updateData.image = imageUrl;
 
-      const { data, error } = await authClient.updateUser(updateData);
+      const { error } = await authClient.updateUser(updateData);
 
       if (error) {
         throw new Error(error.message || "Failed to update user");
       }
-
-      // Refresh the session to get updated data
-      await authClient.getSession();
       
-      // Update local state
-      if (data?.user) {
-        const updatedUser = data.user as User;
-        setUser(updatedUser);
+      // ✅ Refresh session to get the updated user info
+      const newSession = await authClient.getSession();
+      if (newSession?.data?.user) {
+        setUser(newSession.data.user as User);
       }
+
 
       alert("✅ Profile updated successfully!");
       setIsEditing(false);
