@@ -12,12 +12,17 @@ mongoose
   .then(() => console.log("✅ MongoDB connected"))
   .catch((err) => console.log(err));
 
+
 const allowedOrigins = [
   "http://localhost:3000",
   "https://blog-post-with-better-auth-r4uu.vercel.app",
   "https://blog-post-with-better-auth-wwwc.vercel.app"
 ];
 
+const app = express();
+
+// ❌ Removed: app.use(cors(corsOptions));  (it was undefined)
+// ✅ Keep only one proper CORS middleware:
 app.use(
   cors({
     origin: allowedOrigins,
@@ -25,9 +30,9 @@ app.use(
   })
 );
 
-const app = express();
-app.use(cors(corsOptions));
 app.use(express.json());
+
+
 
 // --- Setup file upload folders ---
 const uploadDir = path.join(process.cwd(), "uploads");
