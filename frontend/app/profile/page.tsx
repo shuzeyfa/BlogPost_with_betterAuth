@@ -3,51 +3,54 @@
 import { useEffect, useState } from "react";
 import { authClient } from "@/lib/authClient";
 
-export default function ProfilePage() {
-  const [user, setUser] = useState({
-    name: "",
-    email: "",
-    bio: "",
-    image: "",
-  });
+// Define proper types based on your Better Auth schema
+interface User {
+  id: string;
+  email: string;
+  name?: string;
+  bio?: string;
+  image?: string;
+}
 
+export default function ProfilePage() {
+  const [user, setUser] = useState<User | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState({
     name: "",
-    email: "",
     bio: "",
     image: "",
-    imageType: "url",
+    imageType: "url" as "url" | "upload",
   });
   const [file, setFile] = useState<File | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Better way to fetch user data
   useEffect(() => {
     const fetchUser = async () => {
-      const session = await authClient.getSession();
-      const data = session?.data?.user;
-      setUser({
-        name: data?.name || "",
-        email: data?.email || "",
-        bio: data?.bio || "",
-        image: data?.image || "",
-      });
+      try {
+        const session = await authClient.getSession();
+        if (session?.data?.user) {
+          const userData = session.data.user as User;
+          setUser(userData);
+          setFormData({
+            name: userData.name || "",
+            bio: userData.bio || "",
+            image: userData.image || "",
+            imageType: "url",
+          });
+        }
+      } catch (error) {
+        console.error("Error fetching user:", error);
+      }
     };
     fetchUser();
   }, []);
 
-  // ✅ Fixed here
-  useEffect(() => {
-    setFormData((prev) => ({
-      ...prev,
-      ...user,
-      imageType: prev.imageType || "url",
-    }));
-  }, [user]);
-
   const handleChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => setFormData({ ...formData, [e.target.name]: e.target.value });
+  ) => {
+    setFormData({ ...formData, [e.target.name]: e.target.value });
+  };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0];
@@ -55,80 +58,75 @@ export default function ProfilePage() {
   };
 
   const handleSave = async (e: React.FormEvent) => {
-  e.preventDefault();
-  setLoading(true);
+    e.preventDefault();
+    setLoading(true);
 
-  try {
-    let imageUrl = formData.image;
+    try {
+      let imageUrl = formData.image;
 
-    // 🖼️ 1️⃣ Handle image upload if uploading
-    if (formData.imageType === "upload" && file) {
-      const fileData = new FormData();
-      fileData.append("image", file);
+      // Handle image upload
+      if (formData.imageType === "upload" && file) {
+        const fileData = new FormData();
+        fileData.append("image", file);
 
-      const uploadRes = await fetch("https://blogpost-with-betterauth-1.onrender.com/upload/user", {
-        method: "POST",
-        body: fileData,
-      });
+        const uploadRes = await fetch("https://blogpost-with-betterauth-1.onrender.com/upload/user", {
+          method: "POST",
+          body: fileData,
+        });
 
-      const uploadData = await uploadRes.json();
-      if (!uploadRes.ok) throw new Error(uploadData.message || "Upload failed");
+        if (!uploadRes.ok) {
+          const errorData = await uploadRes.json();
+          throw new Error(errorData.message || "Upload failed");
+        }
 
-      imageUrl = uploadData.url;
+        const uploadData = await uploadRes.json();
+        imageUrl = uploadData.url;
+      }
+
+      // Update user - only include fields that exist in your schema
+      const updateData: any = {};
+      if (formData.name) updateData.name = formData.name;
+      if (formData.bio) updateData.bio = formData.bio;
+      if (imageUrl) updateData.image = imageUrl;
+
+      const { data, error } = await authClient.updateUser(updateData);
+
+      if (error) {
+        throw new Error(error.message || "Failed to update user");
+      }
+
+      // Refresh the session to get updated data
+      await authClient.getSession();
+      
+      // Update local state
+      if (data?.user) {
+        const updatedUser = data.user as User;
+        setUser(updatedUser);
+      }
+
+      alert("✅ Profile updated successfully!");
+      setIsEditing(false);
+      setFile(null);
+
+    } catch (err: any) {
+      console.error("❌ Error updating profile:", err);
+      alert("❌ Failed to update profile: " + err.message);
+    } finally {
+      setLoading(false);
     }
-    // 👤 2️⃣ Update user fields (name, image, maybe bio)
-    const { data, error } = await authClient.updateUser({
-      name: formData.name,
-      image: imageUrl,
-      bio: formData.bio,
-    });
+  };
 
-    // Fix: throw when there *is* an error
-    if (error) {
-      throw new Error(error.message || "Failed to update user");
-    }
-    console.log("✅ User updated:", data);  
-
-    // 🔄 3️⃣ Refetch the updated session to refresh UI
-    await authClient.getSession();
-
-    const session = await authClient.getSession();
-    console.log("🔄 Refetched session:", session);
-    const updatedUser = session?.data?.user;
-    if (updatedUser) {
-      setUser({
-        name: updatedUser.name || "",
-        email: updatedUser.email || "",
-        bio: updatedUser.bio || "",
-        image: updatedUser.image || "",
-      });
-
-      setFormData({
-        name: updatedUser.name || "",
-        email: updatedUser.email || "",
-        bio: updatedUser.bio || "",
-        image: updatedUser.image || "",
-        imageType: "url",
-      });
-    }
-
-    alert("✅ Profile updated successfully!");
-    setIsEditing(false);
-
-  } catch (err: any) {
-    console.error("❌ Error updating profile:", err);
-    alert("❌ Failed to update profile: " + err.message);
-  } finally {
-    setLoading(false);
+  if (!user) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-gray-500">Loading...</div>
+      </div>
+    );
   }
-};
-
-
-
 
   return (
-    <main className="min-h-screen bg-linear-to-br from-blue-50 via-white to-blue-100 flex items-center justify-center py-12 px-4">
-      <div className="w-full max-w-2xl bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl border border-blue-100 p-8 transition-transform duration-300 hover:scale-[1.01]">
+    <main className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-blue-100 flex items-center justify-center py-12 px-4">
+      <div className="w-full max-w-2xl bg-white/70 backdrop-blur-xl rounded-3xl shadow-2xl border border-blue-100 p-8">
         {/* Header */}
         <div className="flex flex-col sm:flex-row items-center sm:items-start gap-6">
           <div className="relative">
@@ -140,13 +138,13 @@ export default function ProfilePage() {
               />
             ) : (
               <div className="w-32 h-32 rounded-full bg-blue-600 text-white flex items-center justify-center text-4xl font-bold shadow-lg">
-                {user.name.charAt(0).toUpperCase()}
+                {user.name?.charAt(0).toUpperCase() || user.email.charAt(0).toUpperCase()}
               </div>
             )}
           </div>
 
           <div className="flex-1 text-center sm:text-left">
-            <h1 className="text-3xl font-bold text-gray-800">{user.name}</h1>
+            <h1 className="text-3xl font-bold text-gray-800">{user.name || "No Name"}</h1>
             <p className="text-gray-500">{user.email}</p>
             <p className="mt-2 text-gray-700">{user.bio || "No bio added yet."}</p>
 
@@ -178,12 +176,11 @@ export default function ProfilePage() {
                 <label className="block text-gray-700 font-semibold mb-2">Email</label>
                 <input
                   type="email"
-                  name="email"
+                  value={user.email}
                   disabled
-                  value={formData.email}
-                  onChange={handleChange}
-                  className="w-full border border-gray-300 rounded-xl px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  className="w-full border border-gray-300 rounded-xl px-3 py-2 bg-gray-100 text-gray-500"
                 />
+                <p className="text-sm text-gray-500 mt-1">Email cannot be changed</p>
               </div>
 
               <div>
@@ -197,7 +194,7 @@ export default function ProfilePage() {
                 />
               </div>
 
-              {/* Image type selection */}
+              {/* Rest of your form remains the same */}
               <div className="flex gap-6">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
